@@ -119,7 +119,9 @@ The project is developed in WSL2 and cross-compiled to Windows with the GNU
 toolchain (`.cargo/config.toml` makes that the default target).
 `./run.sh` builds, copies the `.exe` to your Windows `bin` folder (faster to
 launch than from `\\wsl$`) and runs it; `./run.sh release` does the same
-for an optimized build.
+for an optimized build. `./release.sh` builds the release `.exe` and zips
+it into `dist/`; it remaps the source paths Rust bakes into the binary so
+the `.exe` doesn't contain your home folder or username.
 
 ## History
 
