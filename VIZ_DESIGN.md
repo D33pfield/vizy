@@ -14,32 +14,45 @@ with no virtual cables or third-party apps.
 - **Audio capture:** WASAPI loopback on the default output device, which is built into Windows.
   - One Windows `.exe` with no helper process. The WSL "pipe from a Windows
     helper" idea was dropped because it's too complex for now.
-- **Styles** (switch with `Tab` or `1`-`5`; each is a file in `src/render/`):
-  1. `meter`: stereo L/R LED level meter, shared dB scale.
-  2. `matrix`: LED dot-matrix spectrum (mono), peak dots, frequency labels.
-  3. `mirror`: square segments from a centre line, L up / R down, blue→red by distance, floating peaks, frameless.
-  4. `chart`: btop-style two stacked panels (L, R), magenta grid, amber frame, blocky blue bars.
-  5. `horizon` (Claude's own, refined with the user's synthwave refs): an 80s
-     drive. Road with lane markings over a scrolling neon grid toward a
-     striped sun (reflected on the wet road), palm trees sliding past on both
-     sides, wireframe mountain range on the horizon shaped by the spectrum
-     (L half / R half, bass at the outer edges, a pass in the middle for the
-     road and sun; older spectrum ripples back through the rows). Drive speed
-     follows loudness and surges on kicks; kicks pulse the sun and flash the
-     near ridges; treble twinkles the stars. The ground curves down like a
-     small planet (crest = visible horizon); the road bends over it and the
-     mountain range sits beyond it, sinking with distance, blended by a haze
-     band. Peaks sharpened (power curve + fixed per-column crag).
-     Mountain columns are warped with tanh: even when quiet, ends squeezed
-     and middle widened when loud (SQUEEZE_QUIET/LOUD/RATE). Palms are
-     small dense silhouettes fading into the haze with distance, each grown
-     from the music when it appears (bass = droop/length, treble = frond
-     count/leaf fullness, mids = height/spread, plus per-tree randomness). Tuning
-     constants at the top of `src/render/horizon.rs`.
-- Analysis (`src/analysis.rs`) is shared by all styles: per-channel RMS + spectrum,
-  plus a mono average. Each style asks for its own band count and low cutoff
-  (`Style::bands`, `Style::freq_lo`): chart 20 Hz, mirror/horizon 25 Hz,
-  matrix/meter 40 Hz. Top is 16 kHz.
+- **One scene: horizon** (`src/render/horizon.rs`), an 80s synthwave drive.
+  The earlier styles (meter, matrix, mirror, chart) were removed; they live in
+  git history at commit `290b657`.
+  - Road with lane markings over a scrolling neon grid toward a striped sun
+    (reflected on the wet road). The ground curves down like a small planet
+    (crest = visible horizon); the road bends over it.
+  - Wireframe mountain range beyond the crest, shaped by the spectrum (L half /
+    R half, bass at the outer edges, small pass in the middle; older spectrum
+    ripples back through the rows; sinks with distance; haze band at the seam).
+    Peaks sharpened (power curve + per-column crag). Columns tanh-warped: even
+    when quiet, ends squeezed / middle widened when loud.
+  - Palms: small dense silhouettes fading into the haze, each grown from the
+    music when it appears (bass = droop/length, treble = frond count/leaf
+    fullness, mids = height/spread, plus per-tree randomness).
+  - Drive speed follows loudness and surges on kicks; kicks pulse the sun and
+    flash near ridges; treble twinkles the stars. Sky: stars drift slowly;
+    random, slow shooting stars (every 4-16 s) with tapered white-to-violet trails.
+    Sun stripes start just above its middle and thicken downward.
+- **Tap effects (both views), meant to be played on the beat; each dies in
+  ~0.2 s:** ↑ surge (mountains jump up to ~1.9x height, flash white, haze
+  flares); ↓ ground wave (a swell rolls from the crest toward the viewer,
+  lifting grid/road/palms; jolts the dash when it reaches the car; taps
+  stack). Constants SURGE_*, WAVE_*, JOLT_DECAY in horizon.rs.
+- **Two cameras, `c` toggles** with an eased 1.4 s swoop (`src/render/mod.rs`):
+  - Chase view (default): above the road.
+  - Cockpit (`src/render/dash.rs`): 80s supercar driver's seat. Camera low on
+    the road with a wider lens, starting in the outer right lane;
+    ←/→ signal a lane change (green dash arrow
+    blinks); the change happens on the next deep bass hit (min 0.7 s, timeout
+    5 s), opposite arrow cancels; glide between the four lanes (COCKPIT_*, LANES in horizon.rs), A-pillars, roof and
+    rearview mirror close in, dashboard rises from below and dips on kicks.
+    Displays: sweeping red scanner (speed follows energy), 3-column red voice
+    box (L / mids / R), 7-segment MPH + bar (drive speed, ~1.5 s running average), bar tach (bass,
+    redline flashes on kicks), amber VFD 16-band analyzer, button banks
+    (soft backlit style; NORMAL CRUISE/PURSUIT by loudness with hysteresis,
+    TURBO BOOST on strong kicks, others toggle slowly with treble), gullwing yoke. Road stays straight; switching is manual only.
+- Analysis (`src/analysis.rs`) feeds the scene: per-channel RMS + spectrum,
+  plus a mono average. The scene uses 40 bands per channel from 25 Hz to
+  16 kHz (`render::BANDS`, `render::FREQ_LO`).
 - **Dual FFT:** 4096 for most bands, 8192 for bands narrower than 2 small-FFT
   bins (the bass), for better low-end resolution. Bass lags ~40 ms more.
 - **Tilt:** +4.5 dB/octave above 500 Hz only; bass is never cut. Auto-gain
@@ -120,7 +133,7 @@ cargo build --release --target x86_64-pc-windows-gnu
 
 1. ~~Window + loopback capture + one RMS LED meter.~~ Done, works on Windows.
 2. ~~FFT and log bands; style switching; stereo.~~ Done, works on Windows.
-   Deeper bass range + dual FFT + horizon style: awaiting first run.
+   Deeper bass range + dual FFT + horizon scene: done, works. Cockpit view: awaiting first run.
 3. ~~Dot matrix, gradient colors, peak dots, rounded titled frame (the real look).
    Dot size, spacing and glow are free parameters (no cell grid).~~ Done.
 4. Mirror toggle, color themes, keys (`q` quit, `m` mirror, `t` theme, `+/-` sensitivity, `[`/`]` bar count).

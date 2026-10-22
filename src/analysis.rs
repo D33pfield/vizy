@@ -100,13 +100,6 @@ pub struct Frame {
     pub freq_hi: f32,
 }
 
-impl Frame {
-    /// Where `hz` falls across the spectrum, 0 (left edge) to 1 (right edge).
-    pub fn freq_position(&self, hz: f32) -> f32 {
-        (hz / self.freq_lo).ln() / (self.freq_hi / self.freq_lo).ln()
-    }
-}
-
 pub fn level_to_meter(db: f32) -> f32 {
     ((db - LEVEL_FLOOR_DB) / -LEVEL_FLOOR_DB).clamp(0.0, 1.0)
 }

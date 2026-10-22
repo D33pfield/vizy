@@ -6,10 +6,7 @@ use macroquad::prelude::*;
 
 use analysis::Analyzer;
 use audio::Capture;
-use render::{Renderer, Style};
-
-const STYLE_KEYS: [KeyCode; 5] =
-    [KeyCode::Key1, KeyCode::Key2, KeyCode::Key3, KeyCode::Key4, KeyCode::Key5];
+use render::Renderer;
 
 fn window_conf() -> Conf {
     Conf {
@@ -32,29 +29,31 @@ async fn main() {
     };
     println!("capturing: {} @ {} Hz", capture.device_name, capture.sample_rate);
 
-    let mut style = Style::Matrix;
-    let mut analyzer = Analyzer::new(capture.sample_rate, style.bands(), style.freq_lo());
+    let mut analyzer = Analyzer::new(capture.sample_rate, render::BANDS, render::FREQ_LO);
     let mut renderer = Renderer::new();
-    renderer.style_changed();
 
     loop {
         if is_key_pressed(KeyCode::Q) || is_key_pressed(KeyCode::Escape) {
             break;
         }
-
-        let picked = if is_key_pressed(KeyCode::Tab) {
-            Some(style.next())
-        } else {
-            STYLE_KEYS.iter().position(|&k| is_key_pressed(k)).map(|i| Style::ALL[i])
-        };
-        if let Some(next) = picked {
-            style = next;
-            analyzer.configure(style.bands(), style.freq_lo());
-            renderer.style_changed();
+        if is_key_pressed(KeyCode::C) {
+            renderer.toggle_cockpit();
+        }
+        if is_key_pressed(KeyCode::Up) {
+            renderer.surge();
+        }
+        if is_key_pressed(KeyCode::Down) {
+            renderer.send_wave();
+        }
+        if is_key_pressed(KeyCode::Left) {
+            renderer.change_lane(-1);
+        }
+        if is_key_pressed(KeyCode::Right) {
+            renderer.change_lane(1);
         }
 
         analyzer.update(&capture.shared, get_frame_time());
-        renderer.draw(style, &analyzer.frame, &capture.device_name);
+        renderer.draw(&analyzer.frame);
         next_frame().await;
     }
 }

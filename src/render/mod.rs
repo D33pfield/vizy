@@ -1,93 +1,26 @@
-//! Drawing. Styles only read the analysis `Frame`; they never touch audio
-//! directly, so new looks (a VFD panel later) slot in over the same data.
+//! Drawing. The scene only reads the analysis `Frame`; it never touches audio
+//! directly.
+//!
+//! There is one scene, `horizon` (a synthwave drive), seen from one of two
+//! cameras: the chase view above the road, or the driver's seat with the
+//! dashboard (`dash`). Toggling swoops between them.
 
-mod chart;
+mod dash;
 mod horizon;
-mod matrix;
-mod meter;
-mod mirror;
 
 use macroquad::prelude::*;
 
-use crate::analysis::{Frame, Smoothed};
+use crate::analysis::Frame;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum Style {
-    Meter,
-    Matrix,
-    Mirror,
-    Chart,
-    Horizon,
-}
+/// Spectrum bands per channel the scene wants from the analyzer.
+pub const BANDS: usize = 40;
+/// Lowest frequency shown, reaching into the sub-bass.
+pub const FREQ_LO: f32 = 25.0;
 
-impl Style {
-    pub const ALL: [Style; 5] =
-        [Style::Meter, Style::Matrix, Style::Mirror, Style::Chart, Style::Horizon];
-
-    pub fn name(self) -> &'static str {
-        match self {
-            Style::Meter => "meter",
-            Style::Matrix => "matrix",
-            Style::Mirror => "mirror",
-            Style::Chart => "chart",
-            Style::Horizon => "horizon",
-        }
-    }
-
-    /// How many spectrum bands this style wants from the analyzer.
-    pub fn bands(self) -> usize {
-        match self {
-            Style::Meter => 32, // unused, but the analyzer always needs some
-            Style::Matrix => 40,
-            Style::Mirror => 48,
-            Style::Chart => 96,
-            Style::Horizon => 40, // per channel; the ridge shows both
-        }
-    }
-
-    /// Lowest frequency shown. Styles with many bands reach down into the sub-bass.
-    pub fn freq_lo(self) -> f32 {
-        match self {
-            Style::Meter | Style::Matrix => 40.0,
-            Style::Mirror | Style::Horizon => 25.0,
-            Style::Chart => 20.0,
-        }
-    }
-
-    pub fn next(self) -> Self {
-        let i = Self::ALL.iter().position(|&s| s == self).unwrap();
-        Self::ALL[(i + 1) % Self::ALL.len()]
-    }
-}
-
-pub(super) const BG: Color = Color::new(0.027, 0.031, 0.043, 1.0);
-pub(super) const FRAME: Color = Color::new(0.20, 0.23, 0.29, 1.0);
-pub(super) const TEXT_DIM: Color = Color::new(0.42, 0.46, 0.54, 1.0);
-pub(super) const TEXT: Color = Color::new(0.78, 0.82, 0.88, 1.0);
-const ACCENT: Color = Color::new(0.35, 0.85, 0.95, 1.0);
-const LIVE: Color = Color::new(0.30, 0.95, 0.45, 1.0);
-
-pub(super) const HINT: &str = "tab/1-5 style · q quit";
-
-/// Labels for frequency axes, like the ones printed under a hi-fi EQ.
-const FREQ_LABELS: [(f32, &str); 9] = [
-    (20.0, "20"),
-    (31.5, "31"),
-    (63.0, "63"),
-    (160.0, "160"),
-    (400.0, "400"),
-    (1000.0, "1k"),
-    (2500.0, "2.5k"),
-    (6300.0, "6.3k"),
-    (16000.0, "16k"),
-];
-
-/// Classic LED meter colours: green → amber → red, bottom to top.
-pub(super) const LED_RAMP: [(f32, Color); 3] = [
-    (0.0, Color::new(0.15, 0.90, 0.45, 1.0)),
-    (0.65, Color::new(1.00, 0.82, 0.20, 1.0)),
-    (1.0, Color::new(1.00, 0.25, 0.25, 1.0)),
-];
+const TEXT_DIM: Color = Color::new(0.42, 0.46, 0.54, 1.0);
+const TEXT: Color = Color::new(0.78, 0.82, 0.88, 1.0);
+const HINT: &str = "↑/↓ terrain · c cockpit · q quit";
+const COCKPIT_HINT: &str = "↑/↓ terrain · ←/→ lane · c chase cam · q quit";
 
 /// Monospace font from the Windows install; falls back to macroquad's built-in one.
 const FONT_PATHS: [&str; 2] = [
@@ -95,8 +28,10 @@ const FONT_PATHS: [&str; 2] = [
     "C:\\Windows\\Fonts\\consola.ttf",
 ];
 
-/// How long the style name shows after switching.
+/// How long the view name shows after switching.
 const TOAST_SECONDS: f32 = 1.2;
+/// How long the camera takes to swoop between views.
+const SWOOP_SECONDS: f32 = 1.4;
 
 pub struct Renderer {
     // The scene is drawn offscreen first so a glow/bloom pass can be added
@@ -105,6 +40,10 @@ pub struct Renderer {
     font: Option<Font>,
     toast: f32,
     horizon: horizon::Horizon,
+    dash: dash::Dash,
+    cockpit: bool,
+    /// 0 = chase view, 1 = driver's seat; moves toward `cockpit` over the swoop.
+    swoop: f32,
 }
 
 impl Renderer {
@@ -113,37 +52,81 @@ impl Renderer {
             .iter()
             .find_map(|p| std::fs::read(p).ok())
             .and_then(|bytes| load_ttf_font_from_bytes(&bytes).ok());
-        Self { target: make_target(), font, toast: 0.0, horizon: horizon::Horizon::new() }
+        Self {
+            target: make_target(),
+            font,
+            toast: TOAST_SECONDS,
+            horizon: horizon::Horizon::new(),
+            dash: dash::Dash::new(),
+            cockpit: false,
+            swoop: 0.0,
+        }
     }
 
-    /// Call after switching style: shows its name briefly and clears any
-    /// per-style history.
-    pub fn style_changed(&mut self) {
+    /// ↑: surge the mountains.
+    pub fn surge(&mut self) {
+        self.horizon.surge();
+    }
+
+    /// ↓: send a ground wave rolling toward the viewer.
+    pub fn send_wave(&mut self) {
+        self.horizon.send_wave();
+    }
+
+    /// Change lanes; only while driving from the cockpit.
+    pub fn change_lane(&mut self, dir: i32) {
+        if self.cockpit {
+            self.horizon.change_lane(dir);
+        }
+    }
+
+    /// Swap between the chase view and the driver's seat.
+    pub fn toggle_cockpit(&mut self) {
+        self.cockpit = !self.cockpit;
         self.toast = TOAST_SECONDS;
-        self.horizon.reset();
     }
 
-    pub fn draw(&mut self, style: Style, frame: &Frame, device: &str) {
+    pub fn draw(&mut self, frame: &Frame) {
         let (w, h) = (screen_width(), screen_height());
         if self.target.texture.width() != w || self.target.texture.height() != h {
             self.target = make_target();
         }
+        let dt = get_frame_time();
+        let goal = if self.cockpit { 1.0 } else { 0.0 };
+        let step = dt / SWOOP_SECONDS;
+        self.swoop = if self.swoop < goal {
+            (self.swoop + step).min(goal)
+        } else {
+            (self.swoop - step).max(goal)
+        };
+        // Ease in and out so the camera glides rather than lurches.
+        let view = self.swoop * self.swoop * (3.0 - 2.0 * self.swoop);
 
         let mut cam = Camera2D::from_display_rect(Rect::new(0.0, 0.0, w, h));
         cam.render_target = Some(self.target.clone());
         set_camera(&cam);
 
         let ui = Ui { font: self.font.as_ref(), w, h, s: (h / 540.0).clamp(0.8, 2.5) };
-        match style {
-            Style::Meter => meter::draw(&ui, frame, device),
-            Style::Matrix => matrix::draw(&ui, frame, device),
-            Style::Mirror => mirror::draw(&ui, frame),
-            Style::Chart => chart::draw(&ui, frame, device),
-            Style::Horizon => self.horizon.draw(&ui, frame),
+        self.horizon.draw(&ui, frame, view);
+        if view > 0.0 {
+            let car = dash::Car {
+                speed: self.horizon.speed,
+                kick: self.horizon.kick,
+                jolt: self.horizon.jolt,
+                signal: self.horizon.turn_signal(),
+            };
+            self.dash.draw(&ui, frame, &car, view);
         }
+
+        let s = ui.s;
+        let dim = with_alpha(TEXT_DIM, 0.7);
+        ui.text("vizy", 16.0 * s, h - 15.0 * s, 13.0 * s, dim);
+        let hint = if self.cockpit { COCKPIT_HINT } else { HINT };
+        ui.text_right(hint, w - 16.0 * s, h - 15.0 * s, 13.0 * s, dim);
         if self.toast > 0.0 {
-            draw_toast(&ui, style, (self.toast / 0.3).min(1.0));
-            self.toast -= get_frame_time();
+            let label = if self.cockpit { "COCKPIT" } else { "CHASE CAM" };
+            draw_toast(&ui, label, (self.toast / 0.3).min(1.0));
+            self.toast -= dt;
         }
 
         set_default_camera();
@@ -169,12 +152,11 @@ fn make_target() -> RenderTarget {
     rt
 }
 
-fn draw_toast(ui: &Ui, style: Style, alpha: f32) {
-    let label = style.name().to_uppercase();
+fn draw_toast(ui: &Ui, label: &str, alpha: f32) {
     let size = 22.0 * ui.s;
     let (cx, cy) = (ui.w / 2.0, ui.h * 0.14);
     let pad = 14.0 * ui.s;
-    let tw = ui.measure(&label, size);
+    let tw = ui.measure(label, size);
     draw_rectangle(
         cx - tw / 2.0 - pad,
         cy - size * 0.8,
@@ -182,10 +164,10 @@ fn draw_toast(ui: &Ui, style: Style, alpha: f32) {
         size * 1.6,
         with_alpha(BLACK, 0.75 * alpha),
     );
-    ui.text_centered(&label, cx, cy, size, with_alpha(TEXT, alpha));
+    ui.text_centered(label, cx, cy, size, with_alpha(TEXT, alpha));
 }
 
-/// Per-frame drawing context shared by all styles.
+/// Per-frame drawing context.
 pub(super) struct Ui<'a> {
     font: Option<&'a Font>,
     pub w: f32,
@@ -197,7 +179,7 @@ pub(super) struct Ui<'a> {
 impl Ui<'_> {
     /// Draw text left-aligned at `x`, vertically centred on `y`.
     pub fn text(&self, s: &str, x: f32, y: f32, size: f32, color: Color) {
-        let size = size.round() as u16;
+        let size = size.round().max(1.0) as u16;
         let dims = measure_text(s, self.font, size, 1.0);
         draw_text_ex(
             s,
@@ -216,116 +198,8 @@ impl Ui<'_> {
     }
 
     pub fn measure(&self, s: &str, size: f32) -> f32 {
-        measure_text(s, self.font, size.round() as u16, 1.0).width
+        measure_text(s, self.font, size.round().max(1.0) as u16, 1.0).width
     }
-
-    /// Clear a gap in a border line so a label of width `w` can sit in it.
-    pub fn notch(&self, x: f32, y: f32, w: f32, bg: Color) {
-        let gap = 6.0 * self.s;
-        draw_rectangle(x - gap, y - 4.0 * self.s, w + gap * 2.0, 8.0 * self.s, bg);
-    }
-
-    /// The standard rounded frame with btop-style labels set into its edges.
-    /// Returns the frame's rectangle.
-    pub fn chrome(&self, style: Style, device: &str, live: bool) -> Rect {
-        let pad = 18.0 * self.s;
-        let r = Rect::new(pad, pad, self.w - pad * 2.0, self.h - pad * 2.0);
-        rounded_rect_lines(r, 10.0 * self.s, 1.5 * self.s, FRAME);
-
-        let size = 15.0 * self.s;
-        let small = size * 0.9;
-        let inset = 16.0 * self.s;
-
-        // Top-left: app + style name.
-        let style_label = format!(" · {}", style.name());
-        let name_w = self.measure("vizy", size);
-        self.notch(r.x + inset, r.y, name_w + self.measure(&style_label, size), BG);
-        self.text("vizy", r.x + inset, r.y, size, ACCENT);
-        self.text(&style_label, r.x + inset + name_w, r.y, size, TEXT_DIM);
-
-        // Top-right: live / idle status.
-        let (status, color) = if live { ("● LIVE", LIVE) } else { ("○ IDLE", TEXT_DIM) };
-        let sw = self.measure(status, size);
-        self.notch(r.right() - inset - sw, r.y, sw, BG);
-        self.text(status, r.right() - inset - sw, r.y, size, color);
-
-        // Bottom: device on the left, key hints on the right.
-        self.notch(r.x + inset, r.bottom(), self.measure(device, small), BG);
-        self.text(device, r.x + inset, r.bottom(), small, TEXT_DIM);
-        let hw = self.measure(HINT, small);
-        self.notch(r.right() - inset - hw, r.bottom(), hw, BG);
-        self.text(HINT, r.right() - inset - hw, r.bottom(), small, TEXT_DIM);
-
-        r
-    }
-}
-
-/// Frequency labels under a spectrum spanning `left..left + width`, kept
-/// inside that span so edge labels don't spill over borders.
-pub(super) fn freq_axis(ui: &Ui, f: &Frame, left: f32, width: f32, y: f32, size: f32, color: Color) {
-    for (hz, label) in FREQ_LABELS {
-        if hz < f.freq_lo || hz > f.freq_hi {
-            continue;
-        }
-        let half = ui.measure(label, size) / 2.0;
-        let x = (left + f.freq_position(hz) * width).clamp(left + half, left + width - half);
-        ui.text_centered(label, x, y, size, color);
-    }
-}
-
-/// A block of LED dots `cols` wide and `rows` tall showing one level, with
-/// the top lit row fading in for smoothness and a brighter peak-hold row.
-pub(super) fn led_column(
-    level: &Smoothed,
-    left: f32,
-    bottom: f32,
-    spacing: f32,
-    cols: usize,
-    rows: usize,
-) {
-    let r = spacing * 0.34;
-    let lit = level.value * rows as f32;
-    let peak_row = ((level.peak * rows as f32).ceil() as usize).clamp(1, rows) - 1;
-
-    for row in 0..rows {
-        let y = bottom - (row as f32 + 0.5) * spacing;
-        let base = ramp(&LED_RAMP, row as f32 / (rows - 1) as f32);
-        // 0..1 how lit this row is.
-        let amount = (lit - row as f32).clamp(0.0, 1.0);
-        let is_peak = level.peak > 0.0 && row == peak_row && amount < 1.0;
-
-        for col in 0..cols {
-            let x = left + (col as f32 + 0.5) * spacing;
-            // Unlit LEDs keep a faint tint of their colour, like real hardware.
-            draw_circle(x, y, r, with_alpha(base, 0.07));
-            if is_peak {
-                led(x, y, r, mix(base, WHITE, 0.35), 1.0);
-            } else if amount > 0.0 {
-                led(x, y, r, base, amount);
-            }
-        }
-    }
-}
-
-/// A lit LED: soft halo layers under a solid core.
-pub(super) fn led(x: f32, y: f32, r: f32, color: Color, amount: f32) {
-    draw_circle(x, y, r * 2.2, with_alpha(color, 0.05 * amount));
-    draw_circle(x, y, r * 1.5, with_alpha(color, 0.12 * amount));
-    draw_circle(x, y, r, with_alpha(color, amount));
-}
-
-pub(super) fn rounded_rect_lines(r: Rect, radius: f32, t: f32, color: Color) {
-    let (x0, y0, x1, y1) = (r.x, r.y, r.right(), r.bottom());
-    draw_line(x0 + radius, y0, x1 - radius, y0, t, color);
-    draw_line(x0 + radius, y1, x1 - radius, y1, t, color);
-    draw_line(x0, y0 + radius, x0, y1 - radius, t, color);
-    draw_line(x1, y0 + radius, x1, y1 - radius, t, color);
-    // draw_arc grows outward from `radius`, so start half a line width inside.
-    let ar = radius - t / 2.0;
-    draw_arc(x0 + radius, y0 + radius, 24, ar, 180.0, t, 90.0, color);
-    draw_arc(x1 - radius, y0 + radius, 24, ar, 270.0, t, 90.0, color);
-    draw_arc(x1 - radius, y1 - radius, 24, ar, 0.0, t, 90.0, color);
-    draw_arc(x0 + radius, y1 - radius, 24, ar, 90.0, t, 90.0, color);
 }
 
 /// Sample a colour ramp of (position, colour) stops at `t` (0..1).
