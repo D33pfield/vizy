@@ -1,0 +1,13 @@
+[package]
+name = "vizy"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+cpal = "0.18.2"
+macroquad = "0.4.16"
+rustfft = "6.4.1"
+
+# Keep dependencies (macroquad, later rustfft) fast even in debug builds.
+[profile.dev.package."*"]
+opt-level = 3
