@@ -2,7 +2,7 @@
 
 An 80s synthwave drive that dances to whatever your PC is playing.
 
-![vizy chase view: a neon grid road heading toward a striped sun, with wireframe spectrum mountains and palm silhouettes](docs/screenshot.png)
+![vizy in motion: driving toward a striped sun past wireframe spectrum mountains, then swooping into the cockpit as a ground wave rolls in](docs/demo.gif)
 
 Play music, a video, a game, anything. vizy listens to your speakers
 directly (no virtual audio cables or extra apps) and turns the sound into a
@@ -20,6 +20,8 @@ night drive:
 - **Play along.** Tap the arrow keys on the beat to surge the mountains and
   send waves rolling down the road. Signal a lane change and the car swerves
   on the next bass hit.
+
+![The cockpit: scanner, MPH readout, voice box, tach and spectrum analyzer, all reacting to the music](docs/cockpit.png)
 
 ## Download
 
