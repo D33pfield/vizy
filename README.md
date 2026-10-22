@@ -45,6 +45,7 @@ Windows 10 or 11, 64-bit. Nothing to install.
 | `↑` | Surge: the mountains leap up (tap on the beat) |
 | `↓` | Ground wave: a swell rolls down the road toward you (taps stack) |
 | `←` `→` | Cockpit only: signal a lane change; it happens on the next deep bass hit |
+| `Alt+Enter` / `F11` | Toggle fullscreen (`Esc` also leaves it) |
 | `q` / `Esc` | Quit |
 
 ## Known limitations

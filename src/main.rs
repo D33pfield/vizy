@@ -31,9 +31,17 @@ async fn main() {
 
     let mut analyzer = Analyzer::new(capture.sample_rate, render::BANDS, render::FREQ_LO);
     let mut renderer = Renderer::new();
+    let mut fullscreen = false;
 
     loop {
-        if is_key_pressed(KeyCode::Q) || is_key_pressed(KeyCode::Escape) {
+        let alt = is_key_down(KeyCode::LeftAlt) || is_key_down(KeyCode::RightAlt);
+        let enter = is_key_pressed(KeyCode::Enter) || is_key_pressed(KeyCode::KpEnter);
+        // Esc leaves fullscreen first; from a window it quits.
+        let leave = fullscreen && is_key_pressed(KeyCode::Escape);
+        if is_key_pressed(KeyCode::F11) || (alt && enter) || leave {
+            fullscreen = !fullscreen;
+            set_fullscreen(fullscreen);
+        } else if is_key_pressed(KeyCode::Q) || is_key_pressed(KeyCode::Escape) {
             break;
         }
         if is_key_pressed(KeyCode::C) {

@@ -110,6 +110,9 @@ Meant to be played on the beat:
   deep bass hit (at least one blink, 5 s timeout). The opposite arrow
   cancels.
 
+`Alt+Enter` or `F11` toggles borderless fullscreen; `Esc` leaves
+fullscreen before it quits.
+
 Tuning constants sit at the top of each file (`SURGE_*`, `WAVE_*`,
 `LANE_*`, `COCKPIT_*`, `TILT_*`, and so on).
 

@@ -19,8 +19,8 @@ pub const FREQ_LO: f32 = 25.0;
 
 const TEXT_DIM: Color = Color::new(0.42, 0.46, 0.54, 1.0);
 const TEXT: Color = Color::new(0.78, 0.82, 0.88, 1.0);
-const HINT: &str = "↑/↓ terrain · c cockpit · q quit";
-const COCKPIT_HINT: &str = "↑/↓ terrain · ←/→ lane · c chase cam · q quit";
+const HINT: &str = "↑/↓ terrain · c cockpit · alt+enter fullscreen · q quit";
+const COCKPIT_HINT: &str = "↑/↓ terrain · ←/→ lane · c chase cam · alt+enter fullscreen · q quit";
 
 /// Monospace font from the Windows install; falls back to macroquad's built-in one.
 const FONT_PATHS: [&str; 2] = [
