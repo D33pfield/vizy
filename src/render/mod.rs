@@ -22,10 +22,13 @@ const TEXT: Color = Color::new(0.78, 0.82, 0.88, 1.0);
 const HINT: &str = "↑/↓ terrain · c cockpit · alt+enter fullscreen · q quit";
 const COCKPIT_HINT: &str = "↑/↓ terrain · ←/→ lane · c chase cam · alt+enter fullscreen · q quit";
 
-/// Monospace font from the Windows install; falls back to macroquad's built-in one.
-const FONT_PATHS: [&str; 2] = [
+/// Monospace font from the system (Windows, then Android); falls back to
+/// macroquad's built-in one.
+const FONT_PATHS: [&str; 4] = [
     "C:\\Windows\\Fonts\\CascadiaMono.ttf",
     "C:\\Windows\\Fonts\\consola.ttf",
+    "/system/fonts/DroidSansMono.ttf",
+    "/system/fonts/Roboto-Regular.ttf",
 ];
 
 /// How long the view name shows after switching.

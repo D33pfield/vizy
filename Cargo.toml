@@ -9,9 +9,12 @@ readme = "README.md"
 keywords = ["visualizer", "music", "audio", "synthwave", "wasapi"]
 
 [dependencies]
-cpal = "0.18.2"
 macroquad = "0.4.16"
 rustfft = "6.4.1"
+
+# Loopback capture; Android uses its own audio source instead.
+[target.'cfg(not(target_os = "android"))'.dependencies]
+cpal = "0.18.2"
 
 # Keep dependencies (macroquad, rustfft) fast even in debug builds.
 [profile.dev.package."*"]
