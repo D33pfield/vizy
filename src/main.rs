@@ -1,3 +1,6 @@
+// Release builds open just the visualizer window, with no console.
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 mod analysis;
 mod audio;
 mod render;
@@ -22,10 +25,7 @@ fn window_conf() -> Conf {
 async fn main() {
     let capture = match Capture::start() {
         Ok(c) => c,
-        Err(e) => {
-            eprintln!("audio capture failed: {e}");
-            std::process::exit(1);
-        }
+        Err(e) => fail(&format!("Audio capture failed: {e}")),
     };
     println!("capturing: {} @ {} Hz", capture.device_name, capture.sample_rate);
 
@@ -56,4 +56,26 @@ async fn main() {
         renderer.draw(&analyzer.frame);
         next_frame().await;
     }
+}
+
+/// Report a startup error and quit. Release builds have no console, so they
+/// also show it in a message box.
+fn fail(msg: &str) -> ! {
+    eprintln!("{msg}");
+    #[cfg(all(windows, not(debug_assertions)))]
+    message_box(msg);
+    std::process::exit(1);
+}
+
+#[cfg(all(windows, not(debug_assertions)))]
+fn message_box(msg: &str) {
+    #[link(name = "user32")]
+    unsafe extern "system" {
+        fn MessageBoxW(hwnd: *mut std::ffi::c_void, text: *const u16, caption: *const u16, kind: u32) -> i32;
+    }
+    const MB_ICONERROR: u32 = 0x10;
+    let wide = |s: &str| s.encode_utf16().chain(Some(0)).collect::<Vec<u16>>();
+    let (text, caption) = (wide(msg), wide("vizy"));
+    // SAFETY: both strings are NUL-terminated UTF-16 that outlive the call.
+    unsafe { MessageBoxW(std::ptr::null_mut(), text.as_ptr(), caption.as_ptr(), MB_ICONERROR) };
 }

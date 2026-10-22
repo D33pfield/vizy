@@ -2,12 +2,23 @@
 name = "vizy"
 version = "0.1.0"
 edition = "2024"
+description = "An 80s synthwave drive that dances to whatever your PC is playing"
+license = "Unlicense"
+repository = "https://github.com/D33pfield/vizy"
+readme = "README.md"
+keywords = ["visualizer", "music", "audio", "synthwave", "wasapi"]
 
 [dependencies]
 cpal = "0.18.2"
 macroquad = "0.4.16"
 rustfft = "6.4.1"
 
-# Keep dependencies (macroquad, later rustfft) fast even in debug builds.
+# Keep dependencies (macroquad, rustfft) fast even in debug builds.
 [profile.dev.package."*"]
 opt-level = 3
+
+# Small, fast release .exe.
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
